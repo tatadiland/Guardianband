@@ -10,6 +10,9 @@ import deviceRouter from "./device/device.route.js";
 import locationRouter from "./location/location.route.js";
 import geofenceRouter from "./geofence/geofence.route.js";
 import aiRouter from "./ai/ai.route.js";
+import notificationRouter from "./notification/notification.route.js";
+import iotRouter from "./iot/iot.route.js";
+import { ensureSchemaColumns } from "./db.schema.js";
 import { verifyToken } from "./middleware/auth.middleware.js";
 import dotenv from 'dotenv';
 import "./models.js";
@@ -41,6 +44,8 @@ app.use('/api/devices', deviceRouter);
 app.use('/api/locations', locationRouter);
 app.use('/api/geofences', geofenceRouter);
 app.use('/api/ai', verifyToken, aiRouter);
+app.use('/api/notifications', notificationRouter);
+app.use('/api/iot', iotRouter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -58,13 +63,23 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, async () => {
-  try {
-    await connectDB();
-    await sequelize.sync({ force: false, alter: true });
-    console.log('Database synced successfully');
-    console.log(`GuardianBand backend running on http://localhost:${PORT}`);
-  } catch (error) {
-    console.error('Failed to start server:', error);
-  }
-});
+export async function startServer() {
+  const server = app.listen(PORT, async () => {
+    try {
+      await connectDB();
+      await ensureSchemaColumns();
+      await sequelize.sync({ force: false });
+      console.log('Database synced successfully');
+      console.log(`GuardianBand backend running on http://localhost:${PORT}`);
+    } catch (error) {
+      console.error('Failed to start server:', error);
+    }
+  });
+  return server;
+}
+
+if (process.env.NODE_ENV !== "test") {
+  startServer();
+}
+
+export { app };

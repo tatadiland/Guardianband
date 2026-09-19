@@ -5,6 +5,7 @@ import {
   getChildById,
   updateChild,
   deleteChild,
+  getChildren,
 } from "./child.controller.js";
 import { verifyToken } from "../middleware/auth.middleware.js";
 
@@ -15,5 +16,6 @@ childRouter.get("/user/:userId", verifyToken, getChild);
 childRouter.get("/:id", verifyToken, getChildById);
 childRouter.put("/:id", verifyToken, updateChild);
 childRouter.delete("/:id", verifyToken, deleteChild);
+childRouter.get("/user/me/all", verifyToken, getChildren);
 
 export default childRouter;

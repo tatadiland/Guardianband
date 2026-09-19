@@ -21,7 +21,7 @@ const Child = sequelize.define("Child", {
   },
   gender: {
     type: DataTypes.STRING,
-    allowNull: false,
+    allowNull: true,
   },
   height: {
     type: DataTypes.STRING,

@@ -20,18 +20,12 @@ export const createChild = async (req, res) => {
 
     const userId = req.user.id;
 
-    if (!name || !dateOfBirth || !gender) {
+    if (!name || !dateOfBirth) {
       return res.status(400).json({
-        error: "Name, date of birth, and gender are required",
+        error: "Name and date of birth are required",
       });
     }
 
-    const existingChild = await Child.findOne({ where: { userId } });
-    if (existingChild) {
-      return res.status(409).json({
-        error: "This parent already has a child profile. Please update the existing one.",
-      });
-    }
 
     const child = await Child.create({
       name,
@@ -57,6 +51,19 @@ export const createChild = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to create child profile" });
+  }
+};
+
+export const getChildren = async (req, res) => {
+  try {
+    const children = await Child.findAll({
+      where: { userId: req.user.id },
+      order: [["createdAt", "ASC"]],
+    });
+    return res.status(200).json(children);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Failed to fetch child profiles" });
   }
 };
 
@@ -117,7 +124,12 @@ export const updateChild = async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    await child.update(req.body);
+    const allowedFields = [
+      "name", "photo", "dateOfBirth", "gender", "height", "weight", "bloodGroup",
+      "allergies", "existingIllnesses", "medication", "school", "emergencyContact", "phone",
+    ];
+    const updates = Object.fromEntries(Object.entries(req.body).filter(([key]) => allowedFields.includes(key)));
+    await child.update(updates);
 
     res.status(200).json({
       message: "Child profile updated successfully",

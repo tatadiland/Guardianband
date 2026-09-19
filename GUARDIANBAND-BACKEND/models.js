@@ -6,9 +6,11 @@ import Health from "./health/health.model.js";
 import Device from "./device/device.model.js";
 import Location from "./location/location.model.js";
 import Geofence from "./geofence/geofence.model.js";
+import PushSubscription from "./notification/notification.model.js";
+import Telemetry from "./telemetry/telemetry.model.js";
 
 // User <-> Child
-User.hasOne(Child, { foreignKey: "userId", onDelete: "CASCADE" });
+User.hasMany(Child, { foreignKey: "userId", onDelete: "CASCADE" });
 Child.belongsTo(User, { foreignKey: "userId" });
 
 // Child <-> Routine
@@ -35,4 +37,9 @@ Location.belongsTo(Device, { foreignKey: "deviceId" });
 Child.hasOne(Geofence, { foreignKey: "childId", onDelete: "CASCADE" });
 Geofence.belongsTo(Child, { foreignKey: "childId" });
 
-export { User, Child, Routine, Alert, Health, Device, Location, Geofence };
+User.hasMany(PushSubscription, { foreignKey: "userId", onDelete: "CASCADE" });
+PushSubscription.belongsTo(User, { foreignKey: "userId" });
+Device.hasMany(Telemetry, { foreignKey: "deviceId", onDelete: "CASCADE" });
+Telemetry.belongsTo(Device, { foreignKey: "deviceId" });
+
+export { User, Child, Routine, Alert, Health, Device, Location, Geofence, PushSubscription, Telemetry };

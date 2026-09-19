@@ -6,6 +6,13 @@ import { mockHealthData } from "../data/mockData";
 import { BASE_URL } from "../services/api";
 import Map from "../components/Map";
 import LocationSearch from "../components/LocationSearch";
+import {
+  getNotificationPermission,
+  getPushSubscription,
+  subscribeToPushNotifications,
+  supportsPushNotifications,
+  unsubscribeFromPushNotifications,
+} from "../services/notifications";
 
 
 export type RoutineStatus = "completed" | "in-progress" | "upcoming" | "missed";
@@ -228,11 +235,11 @@ function ChildAvatar({ child, className = "" }: { child: any; className?: string
   );
 }
 
-function AppShell({ children }: { children: ReactNode }) {
+function AppShell({ children: content }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { user, child, alerts } = useAppData();
+  const { user, children: childProfiles, child, selectedChildId, setSelectedChildId, alerts } = useAppData();
 
   const unreadCount = alerts.filter(a => a.unread).length;
 
@@ -264,11 +271,26 @@ function AppShell({ children }: { children: ReactNode }) {
 
           <div>
             <strong>{child?.name ?? "No child profile"}</strong>
-            <span>{child ? "Connected" : "Set up profile"}</span>
+            {childProfiles.length > 1 ? (
+              <select
+                aria-label="Select child"
+                value={selectedChildId ?? ""}
+                onChange={(event) => setSelectedChildId(Number(event.target.value))}
+                className="child-selector"
+              >
+                {childProfiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            ) : (
+              <span>{child ? "Connected" : "Set up profile"}</span>
+            )}
           </div>
 
           <span className="online-dot" />
         </div>
+
+        <Link to="/profile" className="button button-primary" style={{ margin: "0 12px 12px", width: "calc(100% - 24px)" }}>
+          + Add Child
+        </Link>
 
         <nav className="main-nav">
           {navItems.map((item) => (
@@ -359,7 +381,7 @@ function AppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <div className="content">{children}</div>
+        <div className="content">{content}</div>
       </main>
     </div>
   );
@@ -538,7 +560,7 @@ function Dashboard() {
 
         <Metric
           label="Activity"
-          value={currentMetrics.activity}
+          value={device?.activity || currentMetrics.activity}
           detail={`${currentMetrics.steps.toLocaleString()} steps today`}
           tone="blue"
           icon="pin"
@@ -546,7 +568,7 @@ function Dashboard() {
 
         <Metric
           label="Battery"
-          value={String(device?.battery ?? currentMetrics.bodyTemp)}
+          value={String(device?.battery ?? 0)}
           unit="%"
           detail={device?.battery && device.battery > 50 ? "Good level" : "Charge soon"}
           tone={(device?.battery ?? 87) > 30 ? "green" : "amber"}
@@ -697,9 +719,14 @@ function Dashboard() {
 }
 
 function IotPage() {
-  const { device, health } = useAppData();
+  const { device, health, location } = useAppData();
 
   if (!device) return <div className="p-8 text-center text-slate-500">No device currently connected.</div>;
+
+  const latestHealth = health[health.length - 1];
+  const deviceOnline = device.lastSeen
+    ? Date.now() - new Date(device.lastSeen).getTime() < 5 * 60 * 1000
+    : Boolean(device.connectivity);
 
   return (
     <>
@@ -707,7 +734,7 @@ function IotPage() {
         eyebrow="IoT command center"
         title="GuardianBand Live"
         description="Real-time telemetry from wearable device."
-        action={<Status>Connected</Status>}
+        action={<Status tone={deviceOnline ? "green" : "amber"}>{deviceOnline ? "Connected" : "Offline"}</Status>}
       />
 
       <Card className="iot-overview">
@@ -735,7 +762,7 @@ function IotPage() {
           </span>
 
           <span>
-            <b>Connected</b>
+            <b>{device.gps || (location ? "Connected" : "--")}</b>
             GPS
           </span>
         </div>
@@ -751,7 +778,7 @@ function IotPage() {
       <div className="metrics-grid iot-metrics">
         <Metric
           label="Heart rate"
-          value="84"
+          value={String(latestHealth?.heartRate ?? "--")}
           unit=" BPM"
           detail="Normal"
           tone="green"
@@ -760,7 +787,7 @@ function IotPage() {
 
         <Metric
           label="Body temperature"
-          value="36.7"
+          value={String(latestHealth?.temperature ?? "--")}
           unit=" °C"
           detail="Normal"
           tone="green"
@@ -769,7 +796,7 @@ function IotPage() {
 
         <Metric
           label="Environment"
-          value="29.4"
+          value="--"
           unit=" °C"
           detail="Comfortable"
           tone="blue"
@@ -778,34 +805,34 @@ function IotPage() {
 
         <Metric
           label="Activity"
-          value="Active"
-          detail="Movement 2m ago"
+          value={device.activity || "--"}
+          detail={device.lastSeen ? `Last seen ${new Date(device.lastSeen).toLocaleString()}` : "No device timestamp"}
           tone="blue"
           icon="pin"
         />
 
         <Metric
           label="GPS"
-          value="Connected"
-          detail="Accuracy 8m"
+          value={location ? "Connected" : "--"}
+          detail={location ? `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}` : "No location reading"}
           tone="green"
           icon="pin"
         />
 
         <Metric
           label="GSM"
-          value="Good"
-          detail="4 of 4 bars"
+          value={device.connectivity || device.gsm || "--"}
+          detail={device.signal || "Signal unavailable"}
           tone="green"
           icon="band"
         />
 
         <Metric
           label="Battery"
-          value="78"
+          value={String(device.battery ?? "--")}
           unit="%"
-          detail="2 days left"
-          tone="amber"
+          detail={device.battery !== undefined && device.battery > 30 ? "Good level" : "Charge soon"}
+          tone={(device.battery ?? 0) > 30 ? "green" : "amber"}
           icon="band"
         />
       </div>
@@ -830,7 +857,7 @@ function IotPage() {
               <p className="eyebrow">Connectivity</p>
               <h2>Device health</h2>
             </div>
-            <Status>Online</Status>
+            <Status tone={deviceOnline ? "green" : "amber"}>{deviceOnline ? "Online" : "Offline"}</Status>
           </div>
 
           <div className="device-line">
@@ -845,7 +872,12 @@ function IotPage() {
 
           <div className="device-line">
             <span>GSM signal</span>
-            <strong>{device.gsm || "Good"}</strong>
+            <strong>{device.connectivity || device.gsm || "Unavailable"}</strong>
+          </div>
+
+          <div className="device-line">
+            <span>Last seen</span>
+            <strong>{device.lastSeen ? new Date(device.lastSeen).toLocaleString() : "Unavailable"}</strong>
           </div>
         </Card>
       </div>
@@ -1999,6 +2031,24 @@ type ChildFormState = {
   photoPreview?: string;
 };
 
+const createEmptyChildFormState = (): ChildFormState => ({
+  name: "",
+  dateOfBirth: "",
+  gender: "",
+  height: "",
+  weight: "",
+  bloodGroup: "",
+  allergies: "",
+  existingIllnesses: "",
+  medication: "",
+  school: "",
+  emergencyContact: "",
+  phone: "",
+  photo: "",
+  photoFile: null,
+  photoPreview: undefined,
+});
+
 const buildChildFormState = (childData?: any | null): ChildFormState => ({
   name: childData?.name ?? "",
   dateOfBirth: childData?.dateOfBirth ?? childData?.dob ?? "",
@@ -2033,7 +2083,7 @@ const getAgeFromDateOfBirth = (dateValue?: string) => {
 };
 
 function ProfilePage() {
-  const { child, setChild, refreshAll } = useAppData();
+  const { child, setChild, setSelectedChildId, refreshAll } = useAppData();
   const [formMode, setFormMode] = useState<"add" | "edit">("add");
   const [formOpen, setFormOpen] = useState(false);
   const [formState, setFormState] = useState<ChildFormState>(() => buildChildFormState(child));
@@ -2042,18 +2092,22 @@ function ProfilePage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (formMode === "add" && formOpen) {
+      return;
+    }
+
     if (child) {
       setFormState(buildChildFormState(child));
     } else {
-      setFormState(buildChildFormState(null));
+      setFormState(createEmptyChildFormState());
     }
-  }, [child]);
+  }, [child, formMode, formOpen]);
 
   const openAddForm = () => {
     setFormMode("add");
     setValidationErrors({});
     setSubmitState(null);
-    setFormState(buildChildFormState(null));
+    setFormState(createEmptyChildFormState());
     setFormOpen(true);
   };
 
@@ -2116,6 +2170,10 @@ function ProfilePage() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
+    if (submitting) {
+      return;
+    }
+
     const errors = validateForm(formState);
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
@@ -2127,36 +2185,62 @@ function ProfilePage() {
     setSubmitState(null);
 
     try {
-      // Use FormData for multipart/form-data to support file upload
-      const formData = new FormData();
-      formData.append('name', formState.name.trim());
-      formData.append('dateOfBirth', formState.dateOfBirth);
-      if (formState.gender) formData.append('gender', formState.gender);
-      if (formState.height) formData.append('height', formState.height);
-      if (formState.weight) formData.append('weight', formState.weight);
-      if (formState.bloodGroup) formData.append('bloodGroup', formState.bloodGroup);
-      if (formState.allergies) formData.append('allergies', formState.allergies);
-      if (formState.existingIllnesses) formData.append('existingIllnesses', formState.existingIllnesses);
-      if (formState.medication) formData.append('medication', formState.medication);
-      if (formState.school) formData.append('school', formState.school);
-      if (formState.emergencyContact) formData.append('emergencyContact', formState.emergencyContact);
-      if (formState.phone) formData.append('phone', formState.phone);
-      if (formState.photoFile) formData.append('photo', formState.photoFile);
+      const payload: Record<string, string | File> = {
+        name: formState.name.trim(),
+        dateOfBirth: formState.dateOfBirth,
+      };
 
-      if (formMode === "add") {
-        const response = await (await import("../services/api")).childAPI.createChild(formData as any);
-        const createdChild = response.data?.child ?? response.data ?? null;
-        if (createdChild) {
-          setChild(createdChild);
+      if (formState.gender) payload.gender = formState.gender;
+      if (formState.height) payload.height = formState.height;
+      if (formState.weight) payload.weight = formState.weight;
+      if (formState.bloodGroup) payload.bloodGroup = formState.bloodGroup;
+      if (formState.allergies) payload.allergies = formState.allergies;
+      if (formState.existingIllnesses) payload.existingIllnesses = formState.existingIllnesses;
+      if (formState.medication) payload.medication = formState.medication;
+      if (formState.school) payload.school = formState.school;
+      if (formState.emergencyContact) payload.emergencyContact = formState.emergencyContact;
+      if (formState.phone) payload.phone = formState.phone;
+
+      if (formState.photoFile) {
+        const formData = new FormData();
+        Object.entries(payload).forEach(([key, value]) => formData.append(key, value));
+        formData.append('photo', formState.photoFile);
+
+        if (formMode === "add") {
+          const response = await (await import("../services/api")).childAPI.createChild(formData as any);
+          const createdChild = response.data?.child ?? response.data ?? null;
+          if (createdChild?.id) {
+            setSelectedChildId(createdChild.id);
+            setChild(createdChild);
+          }
           await refreshAll();
+          setSubmitState({ type: "success", message: "Child profile created successfully." });
+        } else if (child?.id) {
+          const response = await (await import("../services/api")).childAPI.updateChild(child.id, formData as any);
+          const updatedChild = response.data?.child ?? response.data ?? child;
+          setSelectedChildId(child.id);
+          setChild(updatedChild);
+          await refreshAll();
+          setSubmitState({ type: "success", message: "Child profile updated successfully." });
         }
-        setSubmitState({ type: "success", message: "Child profile created successfully." });
-      } else if (child?.id) {
-        const response = await (await import("../services/api")).childAPI.updateChild(child.id, formData as any);
-        const updatedChild = response.data?.child ?? response.data ?? child;
-        setChild(updatedChild);
-        await refreshAll();
-        setSubmitState({ type: "success", message: "Child profile updated successfully." });
+      } else {
+        if (formMode === "add") {
+          const response = await (await import("../services/api")).childAPI.createChild(payload as any);
+          const createdChild = response.data?.child ?? response.data ?? null;
+          if (createdChild?.id) {
+            setSelectedChildId(createdChild.id);
+            setChild(createdChild);
+          }
+          await refreshAll();
+          setSubmitState({ type: "success", message: "Child profile created successfully." });
+        } else if (child?.id) {
+          const response = await (await import("../services/api")).childAPI.updateChild(child.id, payload as any);
+          const updatedChild = response.data?.child ?? response.data ?? child;
+          setSelectedChildId(child.id);
+          setChild(updatedChild);
+          await refreshAll();
+          setSubmitState({ type: "success", message: "Child profile updated successfully." });
+        }
       }
 
       setTimeout(() => {
@@ -2164,7 +2248,7 @@ function ProfilePage() {
         setSubmitState(null);
       }, 500);
     } catch (error: any) {
-      const backendMessage = error?.response?.data?.message || "The child profile could not be saved right now.";
+      const backendMessage = error?.response?.data?.message || error?.response?.data?.error || "The child profile could not be saved right now.";
       setSubmitState({ type: "error", message: backendMessage });
     } finally {
       setSubmitting(false);
@@ -2345,9 +2429,14 @@ function ProfilePage() {
         title={child.name}
         description={`Personal, medical and school information for ${child.name}.`}
         action={
-          <button className="button button-primary" onClick={openEditForm}>
-            Edit Profile
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="button button-primary" onClick={openAddForm}>
+              + Add Child
+            </button>
+            <button className="button button-primary" onClick={openEditForm}>
+              Edit Profile
+            </button>
+          </div>
         }
       />
 
@@ -2658,6 +2747,41 @@ function SettingsPage() {
       deviceAlerts: true,
       privacyMode: false,
     });
+  const [pushStatus, setPushStatus] = useState("Checking notification support...");
+  const [pushBusy, setPushBusy] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (!supportsPushNotifications()) {
+      setPushStatus("Push notifications are not supported in this browser.");
+      return () => { active = false; };
+    }
+
+    getPushSubscription().then((subscription) => {
+      if (!active) return;
+      const permission = getNotificationPermission();
+      setPushStatus(subscription && permission === "granted" ? "Notifications enabled" : permission === "denied" ? "Notifications blocked" : "Notifications are not enabled");
+    });
+
+    return () => { active = false; };
+  }, []);
+
+  const handlePushToggle = async () => {
+    try {
+      setPushBusy(true);
+      if (pushStatus === "Notifications enabled") {
+        await unsubscribeFromPushNotifications();
+        setPushStatus("Notifications are not enabled");
+      } else {
+        const result = await subscribeToPushNotifications();
+        setPushStatus(result.permission === "granted" ? "Notifications enabled" : result.permission === "denied" ? "Notifications blocked" : "Notifications are not enabled");
+      }
+    } catch (error: any) {
+      setPushStatus(error?.message || "Unable to configure push notifications.");
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   return (
     <>
@@ -2843,6 +2967,15 @@ function SettingsPage() {
               />
               Device alerts
             </label>
+          </div>
+
+          <div className="modal-actions" style={{ marginTop: "18px" }}>
+            <div>
+              <p className="text-sm text-slate-500">{pushStatus}</p>
+            </div>
+            <button className="button button-primary" onClick={handlePushToggle} disabled={pushBusy || !supportsPushNotifications()}>
+              {pushBusy ? "Updating..." : pushStatus === "Notifications enabled" ? "Disable push notifications" : "Enable push notifications"}
+            </button>
           </div>
         </Card>
 

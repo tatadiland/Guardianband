@@ -33,6 +33,37 @@ const Device = sequelize.define("Device", {
         type: DataTypes.INTEGER,
         allowNull: false,
     },
+    apiKey: {
+        type: DataTypes.STRING(128),
+        allowNull: true,
+        unique: true,
+    },
+    activity: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    connectivity: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    signal: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    lastSeen: {
+        type: DataTypes.DATE,
+        allowNull: true,
+    },
+    tampered: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+    },
+    sos: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+    },
 });
 
 export default Device;

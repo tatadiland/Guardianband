@@ -63,6 +63,12 @@ export interface DeviceData {
     gps?: string;
     firmware?: string;
     childId?: number;
+    activity?: string;
+    connectivity?: string;
+    signal?: string;
+    lastSeen?: string;
+    tampered?: boolean;
+    sos?: boolean;
 }
 
 export interface LocationData {
@@ -94,7 +100,9 @@ export interface User {
 // ─── Context ─────────────────────────────────────────────
 interface AppContextType {
     user: User | null;
+    children: ChildData[];
     child: ChildData | null;
+    selectedChildId: number | null;
     routines: RoutineItem[];
     alerts: AlertItem[];
     health: HealthRecord[];
@@ -104,6 +112,7 @@ interface AppContextType {
     loading: boolean;
     childLoading: boolean;
     setUser: React.Dispatch<React.SetStateAction<User | null>>;
+    setSelectedChildId: (id: number | null) => void;
     setChild: (child: ChildData | null) => void;
     setRoutines: React.Dispatch<React.SetStateAction<RoutineItem[]>>;
     setAlerts: React.Dispatch<React.SetStateAction<AlertItem[]>>;
@@ -114,10 +123,10 @@ interface AppContextType {
 }
 
 const AppContext = createContext<AppContextType>({
-    user: null, child: null, routines: [], alerts: [], health: [],
+    user: null, children: [], child: null, selectedChildId: null, routines: [], alerts: [], health: [],
     device: null, location: null, geofence: null,
     loading: true, childLoading: true,
-    setUser: () => { }, setChild: () => { }, setRoutines: () => { }, setAlerts: () => { },
+    setUser: () => { }, setSelectedChildId: () => { }, setChild: () => { }, setRoutines: () => { }, setAlerts: () => { },
     setDevice: () => { }, setLocation: () => { }, setGeofence: () => { },
     refreshAll: () => { },
 });
@@ -127,9 +136,14 @@ export function useAppData() {
 }
 
 // ─── Provider ────────────────────────────────────────────
-export function AppDataProvider({ children }: { children: React.ReactNode }) {
+export function AppDataProvider({ children: content }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
+    const [childProfiles, setChildProfiles] = useState<ChildData[]>([]);
     const [child, setChild] = useState<ChildData | null>(null);
+    const [selectedChildId, setSelectedChildIdState] = useState<number | null>(() => {
+        const stored = localStorage.getItem("selectedChildId");
+        return stored ? Number(stored) : null;
+    });
     const [routines, setRoutines] = useState<RoutineItem[]>([]);
     const [alerts, setAlerts] = useState<AlertItem[]>([]);
     const [health, setHealth] = useState<HealthRecord[]>([]);
@@ -138,6 +152,15 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     const [geofence, setGeofence] = useState<GeofenceData | null>(null);
     const [loading, setLoading] = useState(true);
     const [childLoading, setChildLoading] = useState(true);
+
+    const setSelectedChildId = useCallback((id: number | null) => {
+        setSelectedChildIdState(id);
+        if (id === null) {
+            localStorage.removeItem("selectedChildId");
+            return;
+        }
+        localStorage.setItem("selectedChildId", String(id));
+    }, []);
 
     const fetchAll = useCallback(async () => {
         // Load user from localStorage
@@ -166,16 +189,21 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             let currentChild: ChildData | null = null;
 
             try {
-                const childRes = await childAPI.getMyChild();
-                const serverChild = childRes?.data?.child ?? childRes?.data ?? null;
-                currentChild = serverChild && typeof serverChild === 'object' ? serverChild as ChildData : null;
+                const childRes = await childAPI.getMyChildren();
+                const serverChildren = Array.isArray(childRes?.data) ? childRes.data : [];
+                setChildProfiles(serverChildren as ChildData[]);
+                const storedId = selectedChildId && serverChildren.some((item: ChildData) => item.id === selectedChildId)
+                    ? selectedChildId
+                    : serverChildren[0]?.id ?? null;
+                if (storedId && storedId !== selectedChildId) setSelectedChildId(storedId);
+                currentChild = serverChildren.find((item: ChildData) => item.id === storedId) ?? null;
             } catch (error) {
-                const status = (error as any)?.response?.status;
-                if (status === 404) {
-                    currentChild = null;
-                } else {
-                    currentChild = null;
-                }
+                try {
+                    const childRes = await childAPI.getMyChild();
+                    const serverChild = childRes?.data?.child ?? childRes?.data ?? null;
+                    currentChild = serverChild && typeof serverChild === 'object' ? serverChild as ChildData : null;
+                    setChildProfiles(currentChild ? [currentChild] : []);
+                } catch { currentChild = null; setChildProfiles([]); }
             }
 
             setChild(currentChild);
@@ -245,18 +273,23 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
         setChildLoading(false);
         setLoading(false);
-    }, []);
+    }, [selectedChildId, setSelectedChildId]);
 
     useEffect(() => { fetchAll(); }, [fetchAll]);
 
+    useEffect(() => {
+        const interval = window.setInterval(fetchAll, 30000);
+        return () => window.clearInterval(interval);
+    }, [fetchAll]);
+
     return (
         <AppContext.Provider value={{
-            user, child, routines, alerts, health, device, location, geofence,
+            user, children: childProfiles, child, selectedChildId, routines, alerts, health, device, location, geofence,
             loading, childLoading,
-            setUser, setChild, setRoutines, setAlerts, setDevice, setLocation, setGeofence,
+            setUser, setSelectedChildId, setChild, setRoutines, setAlerts, setDevice, setLocation, setGeofence,
             refreshAll: fetchAll,
         }}>
-            {children}
+            {content}
         </AppContext.Provider>
     );
 }

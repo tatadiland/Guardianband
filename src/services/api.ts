@@ -51,6 +51,7 @@ export const authAPI = {
 // ─── Child ──────────────────────────────────────────────
 export const childAPI = {
     getMyChild: () => api.get('/api/children/user/me'),
+    getMyChildren: () => api.get('/api/children/user/me/all'),
     createChild: (data: Record<string, unknown>) => api.post('/api/children', data),
     updateChild: (id: number, data: Record<string, unknown>) => api.put(`/api/children/${id}`, data),
     deleteChild: (id: number) => api.delete(`/api/children/${id}`),
@@ -72,6 +73,11 @@ export const alertAPI = {
     markRead: (id: number) => api.put(`/api/alerts/${id}/read`),
 };
 
+// ─── Push notifications ─────────────────────────────────
+export const notificationAPI = {
+    sendTest: () => api.post('/api/notifications/test'),
+};
+
 // ─── Health ─────────────────────────────────────────────
 export const healthAPI = {
     getHealthData: (childId: number) => api.get(`/api/health/child/${childId}`),
@@ -82,6 +88,10 @@ export const deviceAPI = {
     getDevice: (childId: number) => api.get(`/api/devices/child/${childId}`),
     linkDevice: (childId: number, data: { name: string; hardwareId: string }) =>
         api.post(`/api/devices/child/${childId}`, data),
+};
+
+export const iotAPI = {
+    getLatestTelemetry: (deviceId: number) => api.get(`/api/iot/device/${deviceId}/latest`),
 };
 
 // ─── Location ───────────────────────────────────────────

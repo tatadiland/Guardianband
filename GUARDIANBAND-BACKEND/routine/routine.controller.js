@@ -1,4 +1,5 @@
 import Routine from "./routine.model.js";
+import Child from "../child/child.model.js";
 
 export const getRoutines = async (req, res) => {
     try {
@@ -32,8 +33,12 @@ export const createRoutine = async (req, res) => {
 export const updateRoutine = async (req, res) => {
     try {
         const { id } = req.params;
-        const [updated] = await Routine.update(req.body, { where: { id } });
-        if (updated) {
+        const routine = await Routine.findOne({
+            where: { id },
+            include: { model: Child, where: { userId: req.user.id }, attributes: [] },
+        });
+        if (routine) {
+            await routine.update(req.body);
             const updatedRoutine = await Routine.findByPk(id);
             return res.json(updatedRoutine);
         }
@@ -46,8 +51,12 @@ export const updateRoutine = async (req, res) => {
 export const deleteRoutine = async (req, res) => {
     try {
         const { id } = req.params;
-        const deleted = await Routine.destroy({ where: { id } });
-        if (deleted) {
+        const routine = await Routine.findOne({
+            where: { id },
+            include: { model: Child, where: { userId: req.user.id }, attributes: [] },
+        });
+        if (routine) {
+            await routine.destroy();
             return res.status(204).send();
         }
         return res.status(404).json({ error: "Routine not found" });

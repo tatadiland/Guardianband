@@ -35,6 +35,10 @@ const Alert = sequelize.define("Alert", {
         type: DataTypes.INTEGER,
         allowNull: false,
     },
+    deviceId: { type: DataTypes.INTEGER, allowNull: true },
+    eventId: { type: DataTypes.STRING(180), allowNull: true, unique: true },
+    latitude: { type: DataTypes.FLOAT, allowNull: true },
+    longitude: { type: DataTypes.FLOAT, allowNull: true },
 });
 
 export default Alert;
