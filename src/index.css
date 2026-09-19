@@ -36,8 +36,8 @@ button {
   cursor: pointer;
 }
 
-.app-frame { min-height: 100vh; display: flex; background: #f5f8fc; }
-.sidebar { width: 254px; flex: 0 0 254px; background: #fff; border-right: 1px solid #e5edf6; padding: 28px 16px 20px; display: flex; flex-direction: column; min-height: 100vh; z-index: 10; }
+.app-frame { height: 100vh; min-height: 100vh; display: flex; overflow: hidden; background: #f5f8fc; }
+.sidebar { width: 254px; flex: 0 0 254px; height: 100vh; background: #fff; border-right: 1px solid #e5edf6; padding: 28px 16px 20px; display: flex; flex-direction: column; min-height: 100vh; overflow-y: auto; z-index: 10; }
 .brand, .child-mini, .profile-chip, .nav-link, .card-heading, .device-line, .location-meta, .map-toolbar, .page-header, .topbar, .top-actions, .profile-header, .alert-headline, .alert-meta, .routine-topline, .routine-status-row { display: flex; align-items: center; }
 .brand { gap: 11px; padding: 0 10px 27px; }
 .brand-mark { width: 39px; height: 39px; border-radius: 12px; background: #1f65d6; color: white; display: grid; place-items: center; font-size: 13px; font-weight: 800; box-shadow: 0 7px 16px #bcd5f7; }
@@ -59,7 +59,7 @@ button {
 .nav-badge { margin-left: auto; border-radius: 9px; background: #e84949; color: white; min-width: 19px; text-align: center; padding: 2px 5px; font-size: 10px; }
 .sidebar-bottom { margin-top: auto; display: grid; gap: 8px; }
 .logout-link { border: 0; background: none; color: #4c5f7a; font-weight: 700; padding: 12px; text-align: left; }
-.main-area { min-width: 0; flex: 1; }
+.main-area { min-width: 0; flex: 1; height: 100vh; overflow-x: hidden; overflow-y: auto; }
 .topbar { height: 76px; justify-content: space-between; padding: 0 42px; background: rgba(255,255,255,.8); border-bottom: 1px solid #e8eef5; }
 .breadcrumb { font-size: 11px; color: #9aa8b8; }
 .breadcrumb strong { color: #344b68; }
