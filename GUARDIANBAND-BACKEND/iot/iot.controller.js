@@ -20,6 +20,18 @@ function eventIdFor(deviceId, payload, recordedAt) {
     })).digest("hex");
 }
 
+function serializeTelemetry(telemetry) {
+    const result = telemetry.toJSON();
+    if (typeof result.acceleration === "string") {
+        try {
+            result.acceleration = JSON.parse(result.acceleration);
+        } catch {
+            result.acceleration = null;
+        }
+    }
+    return result;
+}
+
 async function createDeviceAlert({ device, child, eventId, category, severity, title, description, timestamp, latitude, longitude }) {
     const existing = await Alert.findOne({ where: { eventId } });
     if (existing) return existing;
@@ -121,7 +133,7 @@ export async function ingestTelemetry(req, res, next) {
             await createDeviceAlert({ ...alertArgs, eventId: `${eventId}:battery`, category: "Device", severity: "Warning", title: "Low Battery", description: `GuardianBand battery is at ${payload.battery}%.` });
         }
 
-        return res.status(201).json({ message: "Telemetry accepted", telemetry, device: { id: device.id, hardwareId: device.hardwareId, childId: device.childId, lastSeen: timestamp } });
+        return res.status(201).json({ message: "Telemetry accepted", telemetry: serializeTelemetry(telemetry), device: { id: device.id, hardwareId: device.hardwareId, childId: device.childId, lastSeen: timestamp } });
     } catch (error) {
         if (error.name === "SequelizeUniqueConstraintError") return res.status(200).json({ message: "Telemetry already processed.", duplicate: true });
         return next(error);
@@ -136,6 +148,6 @@ export async function getLatestTelemetry(req, res, next) {
         if (!child || child.userId !== req.user.id) return res.status(403).json({ message: "Access denied." });
         const telemetry = await Telemetry.findOne({ where: { deviceId: device.id }, order: [["recordedAt", "DESC"]] });
         if (!telemetry) return res.status(404).json({ message: "Telemetry not found." });
-        return res.json(telemetry);
+        return res.json(serializeTelemetry(telemetry));
     } catch (error) { return next(error); }
 }

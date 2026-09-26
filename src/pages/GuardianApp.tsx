@@ -1,8 +1,6 @@
 import { useState, useEffect, useMemo, type FormEvent, type ReactNode } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAppData } from "../context/AppContext";
-import { demoGeofences, currentMetrics } from "../data/demoFallback";
-import { mockHealthData } from "../data/mockData";
 import { BASE_URL } from "../services/api";
 import Map from "../components/Map";
 import LocationSearch from "../components/LocationSearch";
@@ -251,6 +249,14 @@ function AppShell({ children: content }: { children: ReactNode }) {
     ? user.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()
     : "JD";
 
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    setSelectedChildId(null);
+    window.dispatchEvent(new Event("guardianband-auth-changed"));
+    navigate("/login", { replace: true });
+  };
+
   return (
     <div className="app-frame">
       <aside
@@ -326,7 +332,7 @@ function AppShell({ children: content }: { children: ReactNode }) {
 
           <button
             className="logout-link"
-            onClick={() => navigate("/login")}
+            onClick={handleLogout}
           >
             Log out
           </button>
@@ -472,7 +478,7 @@ function EmergencyModal({
 
 function Dashboard() {
   const [emergencyOpen, setEmergencyOpen] = useState(false);
-  const { user, child, routines, alerts, health, device, loading, childLoading } = useAppData();
+  const { user, child, routines, alerts, health, device, location, geofence, loading, childLoading } = useAppData();
 
   if (loading || childLoading) {
     return (
@@ -491,6 +497,19 @@ function Dashboard() {
       </div>
     );
   }
+
+  const latestHealth = health[0];
+  const hasTelemetry = Boolean(device?.lastSeen);
+  const safetyMessage = device?.sos
+    ? "SOS signal received"
+    : device?.tampered
+      ? "Bracelet tamper signal received"
+      : hasTelemetry
+        ? "Telemetry received"
+        : device
+          ? "No telemetry available"
+          : "No device linked";
+  const safetyTone = device?.sos || device?.tampered ? "red" : hasTelemetry ? "blue" : "amber";
 
   return (
     <>
@@ -519,18 +538,20 @@ function Dashboard() {
 
         <div>
           <strong>
-            {child.name} is safe and connected
+            {child.name}: {safetyMessage}
           </strong>
 
           <p>
-            All GuardianBand systems are working normally.
+            {device?.lastSeen
+              ? `Last telemetry received ${new Date(device.lastSeen).toLocaleString()}.`
+              : "No device telemetry is currently available."}
           </p>
         </div>
 
-        <Status>Safe now</Status>
+        <Status tone={safetyTone}>{safetyMessage}</Status>
 
         <span className="banner-time">
-          Updated 2 min ago
+          {device?.lastSeen ? new Date(device.lastSeen).toLocaleTimeString() : "No update"}
         </span>
       </Card>
 
@@ -542,36 +563,36 @@ function Dashboard() {
       <div className="metrics-grid">
         <Metric
           label="Heart rate"
-          value={String(health[health.length - 1]?.heartRate ?? currentMetrics.heartRate)}
+          value={String(latestHealth?.heartRate ?? "--")}
           unit=" BPM"
-          detail="Within healthy range"
-          tone="green"
+          detail={latestHealth?.heartRate != null ? "Latest recorded" : "No reading yet"}
+          tone={latestHealth?.heartRate != null ? "blue" : "slate"}
           icon="heart"
         />
 
         <Metric
           label="Body temperature"
-          value={String(health[health.length - 1]?.temperature ?? currentMetrics.bodyTemp)}
+          value={String(latestHealth?.temperature ?? "--")}
           unit=" °C"
-          detail="Normal reading"
-          tone="green"
+          detail={latestHealth?.temperature != null ? "Latest recorded" : "No reading yet"}
+          tone={latestHealth?.temperature != null ? "blue" : "slate"}
           icon="band"
         />
 
         <Metric
           label="Activity"
-          value={device?.activity || currentMetrics.activity}
-          detail={`${currentMetrics.steps.toLocaleString()} steps today`}
+          value={device?.activity || "--"}
+          detail={device?.lastSeen ? `Last reported ${new Date(device.lastSeen).toLocaleString()}` : "No device reading"}
           tone="blue"
           icon="pin"
         />
 
         <Metric
           label="Battery"
-          value={String(device?.battery ?? 0)}
+          value={String(device?.battery ?? "--")}
           unit="%"
-          detail={device?.battery && device.battery > 50 ? "Good level" : "Charge soon"}
-          tone={(device?.battery ?? 87) > 30 ? "green" : "amber"}
+          detail={device?.battery != null ? (device.battery > 30 ? "Device reading" : "Charge soon") : "No device reading"}
+          tone={device?.battery == null ? "slate" : device.battery > 30 ? "green" : "amber"}
           icon="band"
         />
       </div>
@@ -581,11 +602,11 @@ function Dashboard() {
           <div className="card-heading">
             <div>
               <p className="eyebrow">Current location</p>
-              <h2>Riverside Primary</h2>
+              <h2>{location ? `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}` : "No location reading"}</h2>
             </div>
 
-            <Status tone="blue">
-              GPS connected
+            <Status tone={location ? "green" : "slate"}>
+              {location ? "Position received" : "No GPS reading"}
             </Status>
           </div>
 
@@ -593,17 +614,17 @@ function Dashboard() {
             <div className="map-grid" />
 
             <div className="map-pin">
-              <span>AM</span>
+              <span>{child.name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span>
             </div>
 
             <div className="map-label">
-              <strong>14 Maple Avenue</strong>
-              <span>Last known · 2 minutes ago</span>
+              <strong>{geofence?.name || "Last position"}</strong>
+              <span>{location?.createdAt ? `Last known · ${new Date(location.createdAt).toLocaleString()}` : location ? "Position received" : "No position received"}</span>
             </div>
           </div>
 
           <div className="card-footer">
-            <span>GSM good · Accuracy 8m</span>
+            <span>{device?.connectivity || "Network unavailable"} · Accuracy {location?.accuracy != null ? `${location.accuracy}m` : "not reported"}</span>
             <Link to="/location">Open location →</Link>
           </div>
         </Card>
@@ -612,7 +633,7 @@ function Dashboard() {
           <div className="card-heading">
             <div>
               <p className="eyebrow">Today's routine</p>
-              <h2>Monday schedule</h2>
+              <h2>Routine</h2>
             </div>
 
             <Link to="/routine">
@@ -688,17 +709,17 @@ function Dashboard() {
               <h2>{device?.name || "No Device Linked"}</h2>
             </div>
 
-            <Status>Connected</Status>
+            <Status tone={device?.lastSeen ? "green" : "slate"}>{device?.lastSeen ? "Reporting" : "No telemetry"}</Status>
           </div>
 
           <div className="device-line">
             <span>Signal strength</span>
-            <strong>Excellent</strong>
+            <strong>{device?.signal || "Unavailable"}</strong>
           </div>
 
           <div className="device-line">
             <span>Last sync</span>
-            <strong>{device?.firmware ? "Active" : "Unknown"}</strong>
+            <strong>{device?.lastSeen ? new Date(device.lastSeen).toLocaleString() : "Unavailable"}</strong>
           </div>
 
           <div className="device-line">
@@ -723,10 +744,8 @@ function IotPage() {
 
   if (!device) return <div className="p-8 text-center text-slate-500">No device currently connected.</div>;
 
-  const latestHealth = health[health.length - 1];
-  const deviceOnline = device.lastSeen
-    ? Date.now() - new Date(device.lastSeen).getTime() < 5 * 60 * 1000
-    : Boolean(device.connectivity);
+  const latestHealth = health[0];
+  const hasTelemetry = Boolean(device.lastSeen);
 
   return (
     <>
@@ -734,7 +753,7 @@ function IotPage() {
         eyebrow="IoT command center"
         title="GuardianBand Live"
         description="Real-time telemetry from wearable device."
-        action={<Status tone={deviceOnline ? "green" : "amber"}>{deviceOnline ? "Connected" : "Offline"}</Status>}
+        action={<Status tone={hasTelemetry ? "blue" : "amber"}>{hasTelemetry ? "Telemetry received" : "No telemetry"}</Status>}
       />
 
       <Card className="iot-overview">
@@ -757,12 +776,12 @@ function IotPage() {
           </span>
 
           <span>
-            <b>{device.gsm || "--"}</b>
+            <b>{device.connectivity || "--"}</b>
             GSM
           </span>
 
           <span>
-            <b>{device.gps || (location ? "Connected" : "--")}</b>
+            <b>{location ? "Position received" : "--"}</b>
             GPS
           </span>
         </div>
@@ -780,8 +799,8 @@ function IotPage() {
           label="Heart rate"
           value={String(latestHealth?.heartRate ?? "--")}
           unit=" BPM"
-          detail="Normal"
-          tone="green"
+          detail={latestHealth?.heartRate != null ? "Latest recorded" : "No reading yet"}
+          tone={latestHealth?.heartRate != null ? "green" : "slate"}
           icon="heart"
         />
 
@@ -789,8 +808,8 @@ function IotPage() {
           label="Body temperature"
           value={String(latestHealth?.temperature ?? "--")}
           unit=" °C"
-          detail="Normal"
-          tone="green"
+          detail={latestHealth?.temperature != null ? "Latest recorded" : "No reading yet"}
+          tone={latestHealth?.temperature != null ? "green" : "slate"}
           icon="band"
         />
 
@@ -798,7 +817,7 @@ function IotPage() {
           label="Environment"
           value="--"
           unit=" °C"
-          detail="Comfortable"
+          detail="Not reported by device"
           tone="blue"
           icon="band"
         />
@@ -821,7 +840,7 @@ function IotPage() {
 
         <Metric
           label="GSM"
-          value={device.connectivity || device.gsm || "--"}
+          value={device.connectivity || "--"}
           detail={device.signal || "Signal unavailable"}
           tone="green"
           icon="band"
@@ -841,13 +860,17 @@ function IotPage() {
         <Card>
           <div className="card-heading">
             <div>
-              <p className="eyebrow">Safety sensors</p>
-              <h2>Environmental protection</h2>
+              <p className="eyebrow">Bracelet status</p>
+              <h2>Safety signals</h2>
             </div>
-            <Status>All normal</Status>
+            <Status tone={device.sos ? "red" : device.tampered ? "amber" : device.lastSeen ? "green" : "slate"}>
+              {device.sos ? "SOS active" : device.tampered ? "Tamper detected" : device.lastSeen ? "No alert reported" : "No telemetry"}
+            </Status>
           </div>
           <div className="sensor-grid">
-            <div className="p-4 text-center text-slate-500">All environmental sensors active.</div>
+            <div className="p-4 text-center text-slate-500">
+              {device.lastSeen ? `SOS ${device.sos ? "active" : "inactive"}; tamper ${device.tampered ? "detected" : "not reported"}.` : "Waiting for bracelet telemetry."}
+            </div>
           </div>
         </Card>
 
@@ -857,22 +880,22 @@ function IotPage() {
               <p className="eyebrow">Connectivity</p>
               <h2>Device health</h2>
             </div>
-            <Status tone={deviceOnline ? "green" : "amber"}>{deviceOnline ? "Online" : "Offline"}</Status>
+            <Status tone={hasTelemetry ? "blue" : "amber"}>{hasTelemetry ? "Telemetry received" : "No telemetry"}</Status>
           </div>
 
           <div className="device-line">
             <span>Hardware</span>
-            <strong>Healthy</strong>
+            <strong>{device.tampered ? "Tamper detected" : device.lastSeen ? "No tamper reported" : "No telemetry"}</strong>
           </div>
 
           <div className="device-line">
             <span>Firmware</span>
-            <strong>{device.firmware || "Up to date"}</strong>
+            <strong>{device.firmware || "Unavailable"}</strong>
           </div>
 
           <div className="device-line">
             <span>GSM signal</span>
-            <strong>{device.connectivity || device.gsm || "Unavailable"}</strong>
+            <strong>{device.connectivity || "Unavailable"}</strong>
           </div>
 
           <div className="device-line">
@@ -889,7 +912,7 @@ function IotPage() {
             <h2>Recent readings</h2>
           </div>
 
-          <Status tone="blue">Live</Status>
+          <Status tone={health.length ? "blue" : "slate"}>{health.length ? "Recorded data" : "No readings"}</Status>
         </div>
 
         <div className="bar-chart health-bars">
@@ -908,10 +931,22 @@ function IotPage() {
 }
 
 function HealthPage() {
-  const { child } = useAppData();
-  const [range, setRange] = useState("Today");
+  const { child, health, device } = useAppData();
+  const [range, setRange] = useState("Latest");
 
   if (!child) return <div className="p-8 text-center text-slate-500">Child profile not set up.</div>;
+
+  const rangeLimit = range === "Latest" ? 1 : range === "7 Readings" ? 7 : 30;
+  const rangedHealth = health.slice(0, rangeLimit);
+  const heartRateReadings = rangedHealth
+    .map((record) => record.heartRate)
+    .filter((value): value is number => typeof value === "number");
+  const averageHeartRate = heartRateReadings.length
+    ? Math.round(heartRateReadings.reduce((sum, value) => sum + value, 0) / heartRateReadings.length)
+    : null;
+  const latestHealth = health[0];
+  const latestHeartRate = latestHealth?.heartRate;
+  const latestTemperature = latestHealth?.temperature;
 
   return (
     <>
@@ -921,7 +956,7 @@ function HealthPage() {
         description="Historical readings and current wellbeing at a glance."
         action={
           <div className="segmented">
-            {["Today", "7 Days", "30 Days"].map(
+            {["Latest", "7 Readings", "30 Readings"].map(
               (item) => (
                 <button
                   key={item}
@@ -945,37 +980,36 @@ function HealthPage() {
       <div className="metrics-grid">
         <Metric
           label="Heart rate"
-          value="84"
+          value={String(latestHeartRate ?? "--")}
           unit=" BPM"
-          detail="Latest · Normal"
-          tone="green"
+          detail={latestHeartRate != null ? "Latest recorded" : "No reading yet"}
+          tone={latestHeartRate != null ? "green" : "slate"}
           icon="heart"
         />
 
         <Metric
           label="Body temperature"
-          value="36.7"
+          value={String(latestTemperature ?? "--")}
           unit=" °C"
-          detail="Latest · Normal"
-          tone="green"
+          detail={latestTemperature != null ? "Latest recorded" : "No reading yet"}
+          tone={latestTemperature != null ? "green" : "slate"}
           icon="band"
         />
 
         <Metric
           label="Activity"
-          value="6,420"
-          unit=" steps"
-          detail="72% of daily goal"
+          value={device?.activity || "--"}
+          detail={device?.lastSeen ? `Last reported ${new Date(device.lastSeen).toLocaleString()}` : "No device reading"}
           tone="blue"
           icon="pin"
         />
 
         <Metric
           label="Environment"
-          value="29.4"
+          value="--"
           unit=" °C"
-          detail="Comfortable"
-          tone="blue"
+          detail="Not reported by device"
+          tone="slate"
           icon="band"
         />
       </div>
@@ -986,42 +1020,41 @@ function HealthPage() {
             <p className="eyebrow">
               Heart rate history
             </p>
-            <h2>{range} readings</h2>
+            <h2>{range === "Latest" ? "Latest readings" : range}</h2>
           </div>
 
-          <Status>Healthy range</Status>
+            <Status tone={heartRateReadings.length ? "blue" : "slate"}>
+              {heartRateReadings.length ? "Recorded readings" : "No readings"}
+            </Status>
         </div>
 
         <div className="chart-summary">
           <span>
-            <b>84 BPM</b>Latest
+            <b>{latestHeartRate ?? "--"}{latestHeartRate != null ? " BPM" : ""}</b>Latest
           </span>
 
           <span>
-            <b>78 BPM</b>Average
+            <b>{averageHeartRate ?? "--"}{averageHeartRate != null ? " BPM" : ""}</b>Average
           </span>
 
           <span>
-            <b>64 BPM</b>Minimum
+            <b>{heartRateReadings.length ? Math.min(...heartRateReadings) : "--"}{heartRateReadings.length ? " BPM" : ""}</b>Minimum
           </span>
 
           <span>
-            <b>96 BPM</b>Maximum
+            <b>{heartRateReadings.length ? Math.max(...heartRateReadings) : "--"}{heartRateReadings.length ? " BPM" : ""}</b>Maximum
           </span>
         </div>
 
         <div className="bar-chart health-bars">
-          {mockHealthData.map((value, index) => (
+          {heartRateReadings.length ? heartRateReadings.slice(0, 12).map((value, index) => (
             <span
               key={index}
               style={{
-                height: `${Math.max(
-                  20,
-                  value
-                )}%`,
+                height: `${Math.min(100, Math.max(20, value))}%`,
               }}
             />
-          ))}
+          )) : <div className="p-4 text-center text-slate-500">No heart-rate readings for this period.</div>}
         </div>
       </Card>
 
@@ -1029,13 +1062,13 @@ function HealthPage() {
         <Card>
           <div className="card-heading">
             <h2>Health status</h2>
-            <Status>All normal</Status>
+            <Status tone={health.length ? "blue" : "slate"}>{health.length ? "Data received" : "No readings"}</Status>
           </div>
 
           <p className="muted">
-            No unusual readings detected in the
-            selected period. Amelia's heart rate and
-            temperature remain within expected range.
+            {health.length
+              ? "Values shown are recorded device readings and are not a medical diagnosis."
+              : "No health readings have been received from the connected device."}
           </p>
         </Card>
 
@@ -1043,14 +1076,12 @@ function HealthPage() {
           <div className="card-heading">
             <h2>Care note</h2>
             <span className="big-blue">
-              29.4°C
+              --
             </span>
           </div>
 
           <p className="muted">
-            The environment is warmer than ideal.
-            Encourage a water break after outdoor
-            activity.
+            Environmental temperature is not included in the current device telemetry.
           </p>
         </Card>
       </div>
@@ -3019,9 +3050,11 @@ function SettingsPage() {
 }
 
 function DevicePage() {
-  const { device } = useAppData();
+  const { device, location } = useAppData();
 
   if (!device) return <div className="p-8 text-center text-slate-500">No device connected.</div>;
+
+  const hasTelemetry = Boolean(device.lastSeen);
 
   return (
     <>
@@ -3041,7 +3074,7 @@ function DevicePage() {
 
               <h2>{device.name || "GuardianBand Device"}</h2>
             </div>
-            <Status>Connected</Status>
+            <Status tone={hasTelemetry ? "blue" : "amber"}>{hasTelemetry ? "Telemetry received" : "No telemetry"}</Status>
           </div>
 
           <div className="device-line">
@@ -3056,22 +3089,22 @@ function DevicePage() {
 
           <div className="device-line">
             <span>GSM</span>
-            <strong>{device.gsm || "--"}</strong>
+            <strong>{device.connectivity || "--"}</strong>
           </div>
 
           <div className="device-line">
             <span>GPS</span>
-            <strong>Connected</strong>
+            <strong>{location ? "Position received" : "No reading"}</strong>
           </div>
 
           <div className="device-line">
             <span>Firmware</span>
-            <strong>{device.firmware || "Latest"}</strong>
+            <strong>{device.firmware || "Unavailable"}</strong>
           </div>
 
           <div className="device-line">
             <span>Device health</span>
-            <strong>Stable</strong>
+            <strong>{device.sos ? "SOS active" : device.tampered ? "Tamper detected" : device.lastSeen ? "No alert reported" : "No telemetry"}</strong>
           </div>
         </Card>
 
@@ -3087,27 +3120,25 @@ function DevicePage() {
           </div>
 
           <div className="status-stack">
-            <Status tone="green">
-              Connected
+            <Status tone={hasTelemetry ? "blue" : "amber"}>
+              {hasTelemetry ? "Telemetry received" : "No telemetry"}
             </Status>
 
-            <Status tone="amber">
-              Low battery
+            <Status tone={device.battery == null ? "slate" : device.battery <= 20 ? "amber" : "green"}>
+              {device.battery == null ? "Battery unavailable" : device.battery <= 20 ? "Low battery" : "Battery normal"}
             </Status>
 
-            <Status tone="red">
-              No signal
+            <Status tone={device.signal ? "green" : "slate"}>
+              {device.signal || "No signal reading"}
             </Status>
 
-            <Status tone="slate">
-              Tamper detected
+            <Status tone={device.sos || device.tampered ? "red" : device.lastSeen ? "green" : "slate"}>
+              {device.sos ? "SOS active" : device.tampered ? "Tamper detected" : device.lastSeen ? "No alert reported" : "No telemetry"}
             </Status>
           </div>
 
           <p className="muted">
-            The band is currently stable. Battery
-            and signal are within expected operating
-            range.
+            {device.lastSeen ? `Last telemetry received ${new Date(device.lastSeen).toLocaleString()}.` : "No telemetry has been received from this device."}
           </p>
         </Card>
       </div>
@@ -3116,16 +3147,18 @@ function DevicePage() {
 }
 
 function InvestigationPage() {
-  const { device } = useAppData();
+  const { device, location, alerts } = useAppData();
 
   if (!device) return <div className="p-8 text-center text-slate-500">No device connected.</div>;
+
+  const hasTelemetry = Boolean(device.lastSeen);
 
   return (
     <>
       <PageHeader
         eyebrow="Emergency workspace"
         title="Investigation mode"
-        description="A focused overview of Amelia's recent location and device condition."
+        description="A focused overview of the selected child's latest location and device condition."
       />
 
       <div className="investigation-layout">
@@ -3139,15 +3172,15 @@ function InvestigationPage() {
               <h2>Last known location</h2>
             </div>
 
-            <Status tone="red">
-              Critical review
+            <Status tone={device.sos || device.tampered ? "red" : hasTelemetry ? "blue" : "amber"}>
+              {device.sos ? "SOS active" : device.tampered ? "Tamper detected" : hasTelemetry ? "Telemetry received" : "No telemetry"}
             </Status>
           </div>
 
           <div className="device-line">
             <span>Location</span>
             <strong>
-              Riverside Primary
+              {location ? `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}` : "No location reading"}
             </strong>
           </div>
 
@@ -3160,19 +3193,17 @@ function InvestigationPage() {
 
           <div className="device-line">
             <span>GSM signal</span>
-            <strong>{device.gsm || "--"}</strong>
+            <strong>{device.signal || device.connectivity || "--"}</strong>
           </div>
 
           <div className="device-line">
             <span>GPS signal</span>
-            <strong>Connected</strong>
+            <strong>{location ? "Position received" : "No reading"}</strong>
           </div>
 
           <div className="device-line">
             <span>Recent alerts</span>
-            <strong>
-              1 location safety alert
-            </strong>
+            <strong>{alerts.length}</strong>
           </div>
         </Card>
 
@@ -3188,10 +3219,9 @@ function InvestigationPage() {
           </div>
 
           <p className="muted">
-            Student was last detected at the school
-            location two minutes ago. Network health
-            remains stable, and the band is still
-            reporting live telemetry.
+            {device.lastSeen
+              ? `Last telemetry received ${new Date(device.lastSeen).toLocaleString()}.`
+              : "No device telemetry is currently available."}
           </p>
         </Card>
       </div>
@@ -3205,11 +3235,19 @@ function InvestigationPage() {
 function GeofencingPage() {
   type Zone = { id: string; name: string; radius: number; status: string; center: { lat: number; lng: number } };
 
-  const [zones, setZones] = useState<Zone[]>(demoGeofences as Zone[]);
+  const { child, geofence, setGeofence } = useAppData();
   const [showForm, setShowForm] = useState(false);
   const [editZone, setEditZone] = useState<Zone | null>(null);
-  const [draft, setDraft] = useState({ name: "", radius: 150, status: "Active", lat: 37.7749, lng: -122.4194 });
+  const [draft, setDraft] = useState({ name: "", radius: 150, lat: 37.7749, lng: -122.4194 });
   const [searchMarker, setSearchMarker] = useState<{ lat: number; lng: number; label: string } | null>(null);
+  const [formError, setFormError] = useState("");
+  const zones: Zone[] = geofence ? [{
+    id: String(geofence.id),
+    name: geofence.name || "Safe Zone",
+    radius: geofence.radius,
+    status: "Configured",
+    center: { lat: geofence.latitude, lng: geofence.longitude },
+  }] : [];
 
   const mapCenterLat = zones[0]?.center?.lat ?? 37.7749;
   const mapCenterLng = zones[0]?.center?.lng ?? -122.4194;
@@ -3221,14 +3259,16 @@ function GeofencingPage() {
   }));
 
   const openAdd = () => {
+    setFormError("");
     setEditZone(null);
-    setDraft({ name: "", radius: 150, status: "Active", lat: 37.7749, lng: -122.4194 });
+    setDraft({ name: "", radius: 150, lat: 37.7749, lng: -122.4194 });
     setShowForm(true);
   };
 
   const openEdit = (zone: Zone) => {
+    setFormError("");
     setEditZone(zone);
-    setDraft({ name: zone.name, radius: zone.radius, status: zone.status, lat: zone.center.lat, lng: zone.center.lng });
+    setDraft({ name: zone.name, radius: zone.radius, lat: zone.center.lat, lng: zone.center.lng });
     setShowForm(true);
   };
 
@@ -3244,30 +3284,45 @@ function GeofencingPage() {
     setShowForm(true);
   };
 
-  const saveZone = (e: React.FormEvent) => {
+  const saveZone = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!draft.name.trim()) return;
-    if (editZone) {
-      setZones(prev => prev.map(z => z.id === editZone.id ? { ...z, name: draft.name, radius: draft.radius, status: draft.status, center: { lat: draft.lat, lng: draft.lng } } : z));
-    } else {
-      setZones(prev => [...prev, { id: `g${Date.now()}`, name: draft.name, radius: draft.radius, status: draft.status, center: { lat: draft.lat, lng: draft.lng } }]);
+    if (!child || !draft.name.trim()) return;
+    try {
+      const response = await (await import("../services/api")).geofenceAPI.saveGeofence(child.id, {
+        name: draft.name.trim(),
+        latitude: draft.lat,
+        longitude: draft.lng,
+        radius: draft.radius,
+      });
+      setGeofence(response.data?.geofence ?? response.data);
+      setShowForm(false);
+      setSearchMarker(null);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to save the safe zone.");
     }
-    setShowForm(false);
-    setSearchMarker(null);
   };
 
-  const deleteZone = (id: string) => setZones(prev => prev.filter(z => z.id !== id));
-  const toggleZone = (id: string) => setZones(prev => prev.map(z => z.id === id ? { ...z, status: z.status === "Active" ? "Inactive" : "Active" } : z));
+  const deleteZone = async () => {
+    if (!child) return;
+    try {
+      await (await import("../services/api")).geofenceAPI.deleteGeofence(child.id);
+      setGeofence(null);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to delete the safe zone.");
+    }
+  };
+
+  if (!child) return <div className="p-8 text-center text-slate-500">Select a child profile to configure a safe zone.</div>;
 
   return (
     <>
       <PageHeader
         eyebrow="Safety zones"
         title="Manage Geofencing"
-        description={zones.length > 0 ? "Define safe zones and get alerts when your child enters or leaves them." : "No geofence configured yet. Add a safe zone to start monitoring."}
+        description={zones.length > 0 ? "Manage the saved safe zone for the selected child." : "No safe zone is saved for the selected child."}
         action={
-          <button className="button button-primary" onClick={openAdd}>
-            + Add Safe Zone
+          <button className="button button-primary" onClick={zones.length ? () => openEdit(zones[0]) : openAdd}>
+            {zones.length ? "Edit Safe Zone" : "+ Add Safe Zone"}
           </button>
         }
       />
@@ -3276,7 +3331,7 @@ function GeofencingPage() {
         <div className="map-toolbar">
           <div>
             <strong>{zones.length > 0 ? "Geofence map" : "No geofence configured"}</strong>
-            <span>{zones.length > 0 ? "Demo geofence data is visible for the current monitoring view." : "Add a safe zone to begin tracking."}</span>
+            <span>{zones.length > 0 ? "Saved safe zone" : "Save a safe zone to display it here."}</span>
           </div>
         </div>
 
@@ -3316,12 +3371,6 @@ function GeofencingPage() {
                 <Field label="Radius (metres)">
                   <input type="number" min={50} max={1000} value={draft.radius} onChange={e => setDraft({ ...draft, radius: Number(e.target.value) })} />
                 </Field>
-                <Field label="Status">
-                  <select value={draft.status} onChange={e => setDraft({ ...draft, status: e.target.value })}>
-                    <option>Active</option>
-                    <option>Inactive</option>
-                  </select>
-                </Field>
                 <Field label="Latitude">
                   <input type="number" step="0.0001" value={draft.lat} onChange={e => setDraft({ ...draft, lat: Number(e.target.value) })} />
                 </Field>
@@ -3329,6 +3378,7 @@ function GeofencingPage() {
                   <input type="number" step="0.0001" value={draft.lng} onChange={e => setDraft({ ...draft, lng: Number(e.target.value) })} />
                 </Field>
               </div>
+              {formError && <p role="alert" className="text-sm text-red-600">{formError}</p>}
               <div className="modal-actions">
                 <button type="button" className="button button-quiet" onClick={() => setShowForm(false)}>Cancel</button>
                 <button type="submit" className="button button-primary">Save Zone</button>
@@ -3340,8 +3390,8 @@ function GeofencingPage() {
 
       <div className="geofence-summary-row">
         <Card className="geofence-stat">
-          <p className="eyebrow">Active zones</p>
-          <h2>{zones.filter(z => z.status === "Active").length}</h2>
+          <p className="eyebrow">Configured zones</p>
+          <h2>{zones.length}</h2>
         </Card>
         <Card className="geofence-stat">
           <p className="eyebrow">Total zones</p>
@@ -3349,7 +3399,7 @@ function GeofencingPage() {
         </Card>
         <Card className="geofence-stat">
           <p className="eyebrow">Current status</p>
-          <h2><Status tone="green">Inside zone</Status></h2>
+          <h2><Status tone="slate">Location evaluation unavailable</Status></h2>
         </Card>
       </div>
 
@@ -3362,7 +3412,7 @@ function GeofencingPage() {
                 <h3>{zone.name}</h3>
                 <p className="muted">Radius: {zone.radius} m &middot; Centre: {zone.center.lat.toFixed(4)}, {zone.center.lng.toFixed(4)}</p>
               </div>
-              <Status tone={zone.status === "Active" ? "green" : "slate"}>{zone.status}</Status>
+              <Status tone="green">{zone.status}</Status>
             </div>
 
             <div className="geofence-zone-visual">
@@ -3375,16 +3425,13 @@ function GeofencingPage() {
                 <div className="device-line"><span>Zone name</span><strong>{zone.name}</strong></div>
                 <div className="device-line"><span>Radius</span><strong>{zone.radius} metres</strong></div>
                 <div className="device-line"><span>Status</span><strong>{zone.status}</strong></div>
-                <div className="device-line"><span>Child present</span><strong>{zone.status === "Active" ? "Yes — inside zone" : "N/A"}</strong></div>
+                <div className="device-line"><span>Location status</span><strong>Not evaluated by backend</strong></div>
               </div>
             </div>
 
             <div className="geofence-zone-actions">
-              <button className="mini-button" onClick={() => toggleZone(zone.id)}>
-                {zone.status === "Active" ? "Deactivate" : "Activate"}
-              </button>
               <button className="mini-button" onClick={() => openEdit(zone)}>Edit</button>
-              <button className="mini-button danger" onClick={() => deleteZone(zone.id)}>Delete</button>
+              <button className="mini-button danger" onClick={() => void deleteZone()}>Delete</button>
             </div>
           </Card>
         ))}

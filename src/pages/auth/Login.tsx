@@ -39,6 +39,7 @@ const Login: React.FC = () => {
       if (response.data.token) {
         localStorage.setItem("token", response.data.token);
         localStorage.setItem("user", JSON.stringify(response.data.user));
+        window.dispatchEvent(new Event("guardianband-auth-changed"));
       }
 
       setSuccess("Login successful! Redirecting...");
@@ -46,12 +47,18 @@ const Login: React.FC = () => {
         navigate("/dashboard");
       }, 500);
     } catch (err: any) {
-      if (err.response?.data?.message) {
-        setError(err.response.data.message);
-      } else if (err.message) {
-        setError("Failed to connect to server. Please try again.");
+      if (err.response?.status === 401) {
+        setError('Invalid email or password.');
+      } else if (err.response?.status === 403) {
+        setError('Authentication failed.');
+      } else if (err.response?.status === 404) {
+        setError(err.response?.data?.message || 'Login endpoint not found.');
+      } else if (err.response?.status === 500) {
+        setError('Server error. Please try again later.');
+      } else if (err.code === 'ERR_NETWORK' || !err.response) {
+        setError('Failed to connect to the local backend at http://localhost:3000.');
       } else {
-        setError("Login failed. Please try again.");
+        setError(err.response?.data?.message || 'Login failed. Please try again.');
       }
     } finally {
       setLoading(false);

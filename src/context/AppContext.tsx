@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { authAPI, childAPI, routineAPI, alertAPI, healthAPI, deviceAPI, locationAPI, geofenceAPI } from "../services/api";
-import { demoDevice, demoHealthData, demoRoutines, demoAlerts, demoGeofences } from "../data/demoFallback";
 
 // ─── Types ───────────────────────────────────────────────
 export interface ChildData {
@@ -163,7 +162,21 @@ export function AppDataProvider({ children: content }: { children: React.ReactNo
     }, []);
 
     const fetchAll = useCallback(async () => {
-        // Load user from localStorage
+        if (!localStorage.getItem("token")) {
+            setUser(null);
+            setChildProfiles([]);
+            setChild(null);
+            setRoutines([]);
+            setAlerts([]);
+            setHealth([]);
+            setDevice(null);
+            setLocation(null);
+            setGeofence(null);
+            setLoading(false);
+            setChildLoading(false);
+            return;
+        }
+
         try {
             const stored = localStorage.getItem("user");
             if (stored) {
@@ -197,7 +210,7 @@ export function AppDataProvider({ children: content }: { children: React.ReactNo
                     : serverChildren[0]?.id ?? null;
                 if (storedId && storedId !== selectedChildId) setSelectedChildId(storedId);
                 currentChild = serverChildren.find((item: ChildData) => item.id === storedId) ?? null;
-            } catch (error) {
+            } catch {
                 try {
                     const childRes = await childAPI.getMyChild();
                     const serverChild = childRes?.data?.child ?? childRes?.data ?? null;
@@ -212,20 +225,20 @@ export function AppDataProvider({ children: content }: { children: React.ReactNo
                 // Fetch routines
                 try {
                     const routineRes = await routineAPI.getRoutines(currentChild.id);
-                    setRoutines(routineRes.data?.length > 0 ? routineRes.data : demoRoutines as any);
-                } catch { setRoutines(demoRoutines as any); }
+                    setRoutines(Array.isArray(routineRes.data) ? routineRes.data : []);
+                } catch { setRoutines([]); }
 
                 // Fetch alerts
                 try {
                     const alertRes = await alertAPI.getAlerts(currentChild.id);
-                    setAlerts(alertRes.data?.length > 0 ? alertRes.data : demoAlerts as any);
-                } catch { setAlerts(demoAlerts as any); }
+                    setAlerts(Array.isArray(alertRes.data) ? alertRes.data : []);
+                } catch { setAlerts([]); }
 
                 // Fetch health
                 try {
                     const healthRes = await healthAPI.getHealthData(currentChild.id);
-                    setHealth(healthRes.data?.length > 0 ? healthRes.data : demoHealthData as any);
-                } catch { setHealth(demoHealthData as any); }
+                    setHealth(Array.isArray(healthRes.data) ? healthRes.data : []);
+                } catch { setHealth([]); }
 
                 // Fetch device
                 try {
@@ -239,19 +252,19 @@ export function AppDataProvider({ children: content }: { children: React.ReactNo
                             setLocation(locRes.data || null);
                         } catch { setLocation(null); }
                     } else {
-                        setDevice(demoDevice as any);
-                        setLocation({ latitude: demoGeofences[0].center.lat, longitude: demoGeofences[0].center.lng } as any);
+                        setDevice(null);
+                        setLocation(null);
                     }
                 } catch {
-                    setDevice(demoDevice as any);
-                    setLocation({ latitude: demoGeofences[0].center.lat, longitude: demoGeofences[0].center.lng } as any);
+                    setDevice(null);
+                    setLocation(null);
                 }
 
                 // Fetch geofence
                 try {
                     const geoRes = await geofenceAPI.getGeofence(currentChild.id);
-                    setGeofence(geoRes.data?.geofence ?? geoRes.data);
-                } catch { setGeofence(demoGeofences[0] as any); }
+                    setGeofence(geoRes.data?.geofence ?? geoRes.data ?? null);
+                } catch { setGeofence(null); }
             } else {
                 setRoutines([]);
                 setAlerts([]);
@@ -276,6 +289,16 @@ export function AppDataProvider({ children: content }: { children: React.ReactNo
     }, [selectedChildId, setSelectedChildId]);
 
     useEffect(() => { fetchAll(); }, [fetchAll]);
+
+    useEffect(() => {
+        const handleAuthChanged = () => { void fetchAll(); };
+        window.addEventListener("guardianband-auth-changed", handleAuthChanged);
+        window.addEventListener("storage", handleAuthChanged);
+        return () => {
+            window.removeEventListener("guardianband-auth-changed", handleAuthChanged);
+            window.removeEventListener("storage", handleAuthChanged);
+        };
+    }, [fetchAll]);
 
     useEffect(() => {
         const interval = window.setInterval(fetchAll, 30000);
